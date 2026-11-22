@@ -451,7 +451,7 @@ function renderRun() {
         <div class="form"><label>Confirm</label><input id="endc" placeholder="END"></div><div class="row-btns" style="justify-content:flex-start"><button class="btn danger" id="endb" disabled>End run</button></div></div>`}
     </div>
     <section><h2>How SimQ works</h2><div class="card"><p>SimQ's market is <b>real TQQQ history, reshuffled</b>: each run stitches together blocks of 2–12 weeks of actual trading days since 2010 (real daily moves, gaps, VIX), joined where volatility matches. Prices start at a random level and real dates are never shown, so you can't look ahead.</p>
-      <p>Option prices come from the real Nasdaq fear gauge (VXN) of the same day: at-the-money IV ≈ 2.9× VXN for weeklies, easing to 2.65× for monthlies, with a steep put skew. Fear &amp; Greed is built from the path the way CNN builds its index. Only cash-secured puts and covered calls; sells fill at the bid, buy-backs at the ask; no fees. Cash earns the sim rate, paid Fridays.</p></div></section>`;
+      <p>Option prices come from the real Nasdaq fear gauge (VXN) of the same day: at-the-money IV ≈ 2.9× VXN for weeklies, easing to 2.65× for monthlies, with a steep put skew. Fear &amp; Greed is built from the path the way CNN builds its index. Only cash-secured puts and covered calls; sells fill at the bid, buy-backs at the ask; no fees. Cash earns the sim rate, paid Fridays: it starts at today's real 3-month T-bill rate, then a sim central bank moves it 0.25 every 6 weeks toward the rate of the era the market is drawn from.</p></div></section>`;
   $("#exp").onclick = async () => {
     const sv = await api("save");
     const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(sv)], {type: "application/json"}));
