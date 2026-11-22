@@ -18,6 +18,7 @@ const ICON = {
 const I = n => `<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${ICON[n]}</svg>`;
 
 let st = null;
+let boot = {found: false, error: null, raw: null};
 const ui = {tab: "Portfolio", exp: null, view: "both", hFilter: "All", range: "3M", perfRange: "All"};
 const TABS = ["Portfolio", "Chain", "Indicators", "History", "Performance", "Run"];
 
@@ -508,13 +509,32 @@ async function newRun(cash) {
   toast("New run started. Good luck.");
 }
 function welcome() {
-  $("#main").innerHTML = `<div class="card" style="max-width:560px;margin:40px auto"><h3>Welcome to SimQ</h3>
-    <p>Practice selling cash-secured puts and covered calls on a market built from <b>real TQQQ history</b>, reshuffled so you can't know what comes next. Every trading day you can act at the open, then move the clock forward.</p>
+  const status = boot.found && boot.error
+    ? `<div class="msg warn"><b>A saved run is in this browser, but it couldn't be loaded</b> (${esc(String(boot.error).replace(/[.)]+$/, m => m.replace(/\./g, "")))}). It hasn't been touched.
+        Download it and send it to Claude to recover it, and don't start a new run here until it's safe.
+        <div class="row-btns" style="justify-content:flex-start;margin-top:8px"><button class="btn" id="dlRaw">Download the saved run</button></div></div>`
+    : `<div class="msg ok"><b>No saved run in this browser.</b> SimQ saves each run only in the browser and window you play it in
+        (not in private windows, and not shared between browsers, profiles or devices). To continue a run from somewhere else,
+        export it there (Run → Export run file) and import it here.</div>`;
+  $("#main").innerHTML = `<div class="card" style="max-width:600px;margin:40px auto"><h3>Welcome to SimQ</h3>
+    ${status}
+    <div class="row-btns" style="justify-content:flex-start;margin:4px 0 14px"><label class="btn">Import a run file<input id="wImp" type="file" accept=".json" hidden></label></div>
+    <p>Or start fresh: practice selling cash-secured puts and covered calls on a market built from <b>real TQQQ history</b>, reshuffled so you can't know what comes next. Every trading day you can act at the open, then move the clock forward.</p>
     <div class="form"><label>Starting cash</label><input id="nc" type="number" value="25000" step="1000">${driftPicker()}</div>
     <p class="hint">Every choice keeps the real crashes, gaps, VIX and Fear &amp; Greed; only the long-run upward drift differs. The real 2010–2026 stretch was one of the Nasdaq's best ever.</p>
-    <div class="row-btns" style="justify-content:flex-start"><button class="btn primary" id="nr">Start my run</button></div></div>`;
+    <div class="row-btns" style="justify-content:flex-start"><button class="btn primary" id="nr">Start a new run</button></div></div>`;
   hookDriftPicker();
-  $("#nr").onclick = () => newRun(+$("#nc").value);
+  $("#wImp").onchange = async e => {
+    const f = e.target.files[0]; if (!f) return;
+    try { st = await api("load", {save: JSON.parse(await f.text())}); boot = {found: false, error: null, raw: null}; await persist(); toast("Run imported."); render(); }
+    catch (err) { toast("That file isn't a SimQ run: " + esc(err.message), 5000); }
+  };
+  if (boot.found && boot.error) {
+    $("#dlRaw").onclick = () => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([boot.raw], {type: "application/json"})); a.download = "simq-saved-run.json"; a.click(); };
+    $("#nr").onclick = () => confirmBox({title: "Replace the saved run?", danger: true, ok: "Start over anyway", delay: 2000,
+      html: "<p>Starting a new run overwrites the saved run that couldn't be loaded. Download it first if you might want it back.</p>",
+      onOK: () => newRun(+$("#nc").value)});
+  } else $("#nr").onclick = () => newRun(+$("#nc").value);
 }
 
 /* ---------- render ---------- */
@@ -545,8 +565,12 @@ document.addEventListener("keydown", e => {
 
 async function start() {
   applyTheme();
-  let saved = null; try { saved = JSON.parse(localStorage.getItem(SAVE_KEY) || "null"); } catch (e) {}
-  if (saved) { try { st = await api("load", {save: saved}); } catch (e) { toast("Couldn't load your saved run: " + esc(e.message)); } }
+  let raw = null, saved = null;
+  try { raw = localStorage.getItem(SAVE_KEY); saved = JSON.parse(raw || "null"); } catch (e) { boot.error = "this browser's storage couldn't be read"; }
+  if (saved) {
+    boot.found = true; boot.raw = raw;
+    try { st = await api("load", {save: saved}); } catch (e) { boot.error = e.message; }
+  }
   render();
 }
 start();
