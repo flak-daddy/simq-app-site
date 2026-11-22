@@ -439,18 +439,20 @@ function renderRun() {
   $("#main").innerHTML = `
     ${st.ended ? `<div class="card"><h3>Run summary</h3><p>Final value <b>${money(st.value)}</b> (${pct(st.ret, 1, true)}) after ${st.weeks} weeks. Seed <b>${st.seed}</b>.</p>
       <p>This run's market was built from these real TQQQ years:</p><div class="kv">${st.eras.slice(0, 8).map(([y, f]) => `<span>${y}</span><b>${pct(f, 0)}</b>`).join("")}</div></div>` : ""}
+    <div class="card" style="margin-top:12px"><h3>This run</h3><div class="kv"><span>Market</span><b>${esc(st.drift_label)}</b><span>Started with</span><b>${money(st.cash0)}</b><span>Week</span><b>${st.weeks + 1}</b></div>
+      <p class="hint">${esc((DRIFT_INFO[st.drift] || {}).d || "")}</p></div>
     <div class="grid cards" style="margin-top:12px">
       <div class="card"><h3>Save</h3><p class="hint">Your run saves itself in this browser after every action. Export a copy to move it to another device or keep it safe.</p>
         <div class="row-btns" style="justify-content:flex-start"><button class="btn" id="exp">Export run file</button><label class="btn">Import run file<input id="imp" type="file" accept=".json" hidden></label></div></div>
       <div class="card"><h3>New run</h3><p class="hint">Starts a fresh market from a new hidden seed. Export first if you want to keep this one.</p>
-        <div class="form"><label>Starting cash</label><input id="nc" type="number" value="25000" step="1000"></div>
+        <div class="form"><label>Starting cash</label><input id="nc" type="number" value="25000" step="1000">${driftPicker()}</div>
         <div class="row-btns" style="justify-content:flex-start"><button class="btn" id="nr">Start a new run</button></div></div>
       <div class="card"><h3>Theme</h3><span class="seg">${["light", "dark", "system"].map(t => `<button data-th="${t}" class="${theme === t ? "on" : ""}">${t[0].toUpperCase() + t.slice(1)}</button>`).join("")}</span>
         <p class="hint" style="margin-top:12px">Keys: N next day · F to Friday · W next week (press the same key again, or Enter, to confirm) · S shares · 1–6 tabs · Esc closes panels and boxes.</p></div>
       ${st.ended ? "" : `<div class="card"><h3>End this run</h3><p class="hint">Ending is permanent. It reveals the seed and which real TQQQ years the market came from. Type END to confirm.</p>
         <div class="form"><label>Confirm</label><input id="endc" placeholder="END"></div><div class="row-btns" style="justify-content:flex-start"><button class="btn danger" id="endb" disabled>End run</button></div></div>`}
     </div>
-    <section><h2>How SimQ works</h2><div class="card"><p>SimQ's market is <b>real TQQQ history, reshuffled</b>: each run stitches together blocks of 2–12 weeks of actual trading days since 2010 (real daily moves, gaps, VIX), joined where volatility matches. Prices start at a random level and real dates are never shown, so you can't look ahead.</p>
+    <section><h2>How SimQ works</h2><div class="card"><p>SimQ's market is <b>real TQQQ history, reshuffled</b>: each run stitches together blocks of 2–12 weeks of actual trading days since 2010 (real daily moves, gaps, VIX), joined where volatility matches. Prices start at a random level and real dates are never shown, so you can't look ahead. Each run picks a market: the history as it was (very bullish), or the same days with their long-run upward drift trimmed to +13%, +10% or +5% a year.</p>
       <p>Option prices come from the real Nasdaq fear gauge (VXN) of the same day: at-the-money IV ≈ 2.9× VXN for weeklies, easing to 2.65× for monthlies, with a steep put skew. Fear &amp; Greed is built from the path the way CNN builds its index. Only cash-secured puts and covered calls; sells fill at the bid, buy-backs at the ask; no fees. Cash earns the sim rate, paid Fridays: it starts at today's real 3-month T-bill rate, then a sim central bank moves it 0.25 every 6 weeks toward the rate of the era the market is drawn from.</p></div></section>`;
   $("#exp").onclick = async () => {
     const sv = await api("save");
@@ -465,6 +467,7 @@ function renderRun() {
       html: `<p>Importing replaces the run you're playing (week ${st.weeks + 1}, ${money(st.value)}). Export it first if you want to keep it.</p>`, onOK: go});
     else go();
   };
+  hookDriftPicker();
   $("#nr").onclick = () => guardedNewRun(+$("#nc").value);
 
   document.querySelectorAll("[data-th]").forEach(b => b.onclick = () => { try { localStorage.setItem(THEME_KEY, b.dataset.th); } catch (e) {} applyTheme(); renderRun(); });
@@ -480,17 +483,37 @@ function guardedNewRun(cash) {
   // the typed word is checked on confirm; keep the field usable while the modal is open
   setTimeout(() => $("#newc")?.focus(), 50);
 }
+const DRIFT_INFO = {
+  history: {name: "History as it was", d: "Real 2010–2026 as it happened: Nasdaq-100 +17%/yr. SimQ's typical year +44%, up 3 years in 4. The friendliest."},
+  nasdaq: {name: "Long-run Nasdaq", d: "Trimmed to the Nasdaq-100's long-run +13%/yr. Typical SimQ year +30%; about 1 year in 10 worse than −39%."},
+  market: {name: "Long-run market", d: "Trimmed to the stock market's long-run +10%/yr. Typical SimQ year +19%; about 1 year in 10 worse than −43%."},
+  tough: {name: "Tough", d: "Trimmed to +5%/yr. Typical SimQ year about flat, down almost half the time; about 1 year in 10 worse than −51%."},
+};
+let pickDrift = "market";
+function driftPicker() {
+  return `<label>Market</label><div><span class="seg" id="drifts">${Object.entries(DRIFT_INFO).map(([k, v]) => `<button data-d="${k}" class="${pickDrift === k ? "on" : ""}">${v.name}</button>`).join("")}</span>
+    <div class="hint" id="driftD" style="margin-top:6px">${DRIFT_INFO[pickDrift].d}</div></div>`;
+}
+function hookDriftPicker() {
+  document.querySelectorAll("#drifts button").forEach(b => b.onclick = () => {
+    pickDrift = b.dataset.d;
+    document.querySelectorAll("#drifts button").forEach(x => x.classList.toggle("on", x === b));
+    $("#driftD").textContent = DRIFT_INFO[pickDrift].d;
+  });
+}
 async function newRun(cash) {
   if (!(cash >= 1000)) { toast("Starting cash must be at least $1,000."); return; }
   const seed = crypto.getRandomValues(new Uint32Array(1))[0];
-  st = await api("new", {cash, seed}); await persist(); ui.tab = "Portfolio"; ui.exp = null; render();
+  st = await api("new", {cash, seed, drift: pickDrift}); await persist(); ui.tab = "Portfolio"; ui.exp = null; render();
   toast("New run started. Good luck.");
 }
 function welcome() {
   $("#main").innerHTML = `<div class="card" style="max-width:560px;margin:40px auto"><h3>Welcome to SimQ</h3>
     <p>Practice selling cash-secured puts and covered calls on a market built from <b>real TQQQ history</b>, reshuffled so you can't know what comes next. Every trading day you can act at the open, then move the clock forward.</p>
-    <div class="form"><label>Starting cash</label><input id="nc" type="number" value="25000" step="1000"></div>
+    <div class="form"><label>Starting cash</label><input id="nc" type="number" value="25000" step="1000">${driftPicker()}</div>
+    <p class="hint">Every choice keeps the real crashes, gaps, VIX and Fear &amp; Greed; only the long-run upward drift differs. The real 2010–2026 stretch was one of the Nasdaq's best ever.</p>
     <div class="row-btns" style="justify-content:flex-start"><button class="btn primary" id="nr">Start my run</button></div></div>`;
+  hookDriftPicker();
   $("#nr").onclick = () => newRun(+$("#nc").value);
 }
 

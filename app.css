@@ -112,3 +112,7 @@ tr.row:hover td{background:var(--accent3)}
 .hint{font-size:12px;color:var(--dim)}
 @media (max-width:760px){.hstat{gap:12px;margin-left:0;width:100%}.top{gap:10px}main{padding:12px}th,td{padding:6px}
   .hide-m{display:none}}
+
+#drifts{display:grid;grid-template-columns:1fr 1fr;border-radius:10px}
+#drifts button{padding:7px 10px;border-right:1px solid var(--line);border-bottom:1px solid var(--line)}
+#drifts button:nth-child(2n){border-right:0}#drifts button:nth-child(n+3){border-bottom:0}
