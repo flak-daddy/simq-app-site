@@ -95,7 +95,8 @@ function renderPortfolio() {
       ${kp("Account value", money(s.value), `started ${money(s.cash0)}`)}
       ${kp("Available", money(s.avail), "spendable cash")}
       ${kp("Collateral", money(s.collateral), s.value ? pct(s.collateral / s.value, 0) + " of account" : "")}
-      ${kp("Shares", s.shares, s.shares ? `${s.free_shares} free · ${s.shares - s.free_shares} covering` : "none held")}
+      <div class="card kpi"><small>Shares</small><b>${s.shares}</b><div class="sub">${s.shares ? `${s.free_shares} free · ${s.shares - s.free_shares} covering` : "none held"}</div>
+        <div style="display:flex;gap:6px;margin-top:8px"><button class="btn" data-sh="buy_shares">Buy</button>${s.free_shares ? `<button class="btn" data-sh="sell_shares">Sell</button>` : ""}</div></div>
       ${kp("Your return", pct(s.ret, 1, true), `buy & hold ${pct(s.bh / s.cash0 - 1, 1, true)} · cash ${pct(s.cash_bench / s.cash0 - 1, 1, true)}`, cls(s.ret))}
       ${kp("Premium kept", money(s.premium), `interest ${money(s.interest)} + ${money(s.accrued)} accruing`)}
     </div>
@@ -113,6 +114,7 @@ function renderPortfolio() {
     </section>`;
   $("#bChain").onclick = () => { ui.tab = "Chain"; render(); };
   $("#bShares").onclick = () => sharesTicket();
+  document.querySelectorAll("[data-sh]").forEach(b => b.onclick = () => sharesTicket(b.dataset.sh));
   document.querySelectorAll("[data-close]").forEach(b => b.onclick = e => { e.stopPropagation(); closeTicket(+b.dataset.close); });
   document.querySelectorAll("tr[data-pid]").forEach(r => r.ondblclick = () => {
     const p = st.positions.find(x => x.id === +r.dataset.pid); ui.exp = p.expiry; ui.tab = "Chain"; render();
@@ -126,21 +128,23 @@ async function renderChain() {
   const opts = st.exps.map(e => `<option value="${e.d}" ${e.d === ui.exp ? "selected" : ""}>${esc(e.label)} · ${e.days}d</option>`).join("");
   $("#main").innerHTML = `<div class="bar"><select id="exp">${opts}</select>
     <span class="seg">${["calls", "both", "puts"].map(v => `<button data-v="${v}" class="${ui.view === v ? "on" : ""}">${v[0].toUpperCase() + v.slice(1)}</button>`).join("")}</span>
-    <span class="hint">Click a bid to sell · sells fill at the bid, buy-backs at the ask · shaded = in the money</span></div><div id="chainT" class="empty">Pricing…</div>`;
+    <span class="hint">Click a bid (the column next to the strike) to sell · shaded = in the money</span>
+    <span style="flex:1"></span><button class="btn" id="cShares">Buy / sell shares</button></div><div id="chainT" class="empty">Pricing…</div>`;
+  $("#cShares").onclick = () => sharesTicket();
   $("#exp").onchange = e => { ui.exp = +e.target.value; renderChain(); };
   document.querySelectorAll(".seg button").forEach(b => b.onclick = () => { ui.view = b.dataset.v; renderChain(); });
   let ch;
   try { ch = await api("chain", {expiry: ui.exp}); } catch (e) { $("#chainT").textContent = e.message; return; }
   const C = ui.view !== "puts", P = ui.view !== "calls";
-  let html = `<table class="chain"><tr>${C ? "<th>Δ</th><th>IV</th><th>Call bid</th><th>Call ask</th>" : ""}<th>Strike</th>${P ? "<th>Put bid</th><th>Put ask</th><th>IV</th><th>Δ</th>" : ""}</tr>`;
+  let html = `<table class="chain"><tr>${C ? "<th>Δ</th><th>IV</th><th>Call ask</th><th>Call bid</th>" : ""}<th>Strike</th>${P ? "<th>Put bid</th><th>Put ask</th><th>IV</th><th>Δ</th>" : ""}</tr>`;
   let placed = false;
   for (const r of ch.rows) {
     if (!placed && r.k > ch.spot) { placed = true; html += `<tr class="spot"><td colspan="9"><div>SimQ ${f2(ch.spot)}</div></td></tr>`; }
     const citm = r.k < ch.spot, pitm = r.k > ch.spot;
     html += `<tr>${C ? `<td class="${citm ? "itm" : ""} dim">${r.cd.toFixed(2)}</td><td class="${citm ? "itm" : ""} dim">${(r.civ * 100).toFixed(0)}%</td>
-      <td class="q ${citm ? "itm" : ""}" data-t="call" data-k="${r.k}">${r.cb > 0 ? f2(r.cb) : "—"}</td><td class="${citm ? "itm" : ""}">${f2(r.ca)}</td>` : ""}
+      <td class="${citm ? "itm" : ""}">${f2(r.ca)}</td><td class="q ${citm ? "itm" : ""}" data-t="call" data-k="${r.k}" title="Sell this call">${r.cb > 0 ? f2(r.cb) : "—"}</td>` : ""}
       <td class="k">${kTxt(r.k)}${r.held_c || r.held_p ? '<span class="dot" title="You hold this strike"></span>' : ""}</td>
-      ${P ? `<td class="q ${pitm ? "itm" : ""}" data-t="put" data-k="${r.k}">${r.pb > 0 ? f2(r.pb) : "—"}</td><td class="${pitm ? "itm" : ""}">${f2(r.pa)}</td>
+      ${P ? `<td class="q ${pitm ? "itm" : ""}" data-t="put" data-k="${r.k}" title="Sell this put">${r.pb > 0 ? f2(r.pb) : "—"}</td><td class="${pitm ? "itm" : ""}">${f2(r.pa)}</td>
       <td class="${pitm ? "itm" : ""} dim">${(r.piv * 100).toFixed(0)}%</td><td class="${pitm ? "itm" : ""} dim">${r.pd.toFixed(2)}</td>` : ""}</tr>`;
   }
   $("#chainT").outerHTML = html + "</table>" + `<p class="hint">${esc(ch.label)} · ${ch.days} trading days incl. today · at-the-money IV ${(ch.atm_iv * 100).toFixed(0)}%</p>`;
@@ -209,20 +213,32 @@ function closeTicket(pid) {
   };
   $("#cQ").oninput = up; up();
 }
-function sharesTicket() {
-  drawer(`<div class="dh"><h3>Buy / sell shares</h3><button class="x" id="dx">Close · Esc</button></div>
-    <div class="form"><label>Side</label><span class="seg"><button data-s="buy_shares" class="on">Buy</button><button data-s="sell_shares">Sell</button></span>
-    <label>Shares</label><input id="sQ" type="number" min="1" value="100"></div><div id="sOut"></div>`);
+function sharesTicket(side = "buy_shares") {
+  const maxBuy = Math.floor(st.avail / st.spot), maxSell = st.free_shares;
+  drawer(`<div class="dh"><h3>Buy / sell SimQ shares</h3><button class="x" id="dx">Close · Esc</button></div>
+    <p class="hint">Shares trade at today's open price, ${f2(st.spot)}. Available cash ${money(st.avail)} · ${st.free_shares} free shares.</p>
+    <div class="form"><label>Side</label><span class="seg"><button data-s="buy_shares" class="${side === "buy_shares" ? "on" : ""}">Buy</button><button data-s="sell_shares" class="${side === "sell_shares" ? "on" : ""}">Sell</button></span>
+    <label>Shares</label><input id="sQ" type="number" min="1" value="${side === "sell_shares" ? Math.max(1, maxSell) : Math.min(100, Math.max(1, maxBuy))}">
+    <label></label><span id="sQuick" style="display:flex;gap:6px;flex-wrap:wrap"></span></div><div id="sOut"></div>`);
   $("#dx").onclick = closeDrawer;
+  const curSide = () => document.querySelector("#drawer .seg button.on").dataset.s;
+  const quick = () => {
+    const sd = curSide(), mx = sd === "buy_shares" ? maxBuy : maxSell;
+    const opts = [100, 200, 500].filter(n => n <= mx).map(n => [n, String(n)]).concat(mx > 0 ? [[mx, `Max (${mx})`]] : []);
+    $("#sQuick").innerHTML = opts.map(([n, l]) => `<button class="btn" data-n="${n}" style="padding:4px 10px">${l}</button>`).join("") || `<span class="hint">${sd === "buy_shares" ? "Not enough cash for a share." : "No free shares to sell."}</span>`;
+    document.querySelectorAll("#sQuick [data-n]").forEach(b => b.onclick = () => { $("#sQ").value = b.dataset.n; up(); });
+  };
   const up = async () => {
-    const o = {action: document.querySelector("#drawer .seg button.on").dataset.s, qty: Math.max(1, Math.floor(+$("#sQ").value || 1))};
+    const o = {action: curSide(), qty: Math.max(1, Math.floor(+$("#sQ").value || 1))};
     const c = await api("check", {order: o});
-    $("#sOut").innerHTML = c.ok ? `<div class="kv"><span>Price (today's open)</span><b>${f2(c.fill)}</b><span>${o.action === "buy_shares" ? "Cost" : "Proceeds"}</span><b>${money(c.fill * o.qty)}</b></div>
+    $("#sOut").innerHTML = c.ok ? `<div class="kv"><span>Price (today's open)</span><b>${f2(c.fill)}</b><span>${o.action === "buy_shares" ? "Cost" : "Proceeds"}</span><b>${money(c.fill * o.qty)}</b>
+      <span>Available after</span><b>${money(st.avail + (o.action === "buy_shares" ? -1 : 1) * c.fill * o.qty)}</b>
+      ${o.action === "buy_shares" ? `<span>Covered calls this allows</span><b>${Math.floor((st.free_shares + o.qty) / 100)}</b>` : ""}</div>
       <div class="row-btns"><button class="btn" id="sC">Cancel</button><button class="btn primary" id="sR">Review trade</button></div>` : `<div class="msg bad">${esc(c.msg)}</div>`;
     if (c.ok) { $("#sC").onclick = closeDrawer; $("#sR").onclick = () => confirmTrade(o, c); }
   };
-  document.querySelectorAll("#drawer .seg button").forEach(b => b.onclick = () => { document.querySelectorAll("#drawer .seg button").forEach(x => x.classList.toggle("on", x === b)); up(); });
-  $("#sQ").oninput = up; up();
+  document.querySelectorAll("#drawer .seg button").forEach(b => b.onclick = () => { document.querySelectorAll("#drawer .seg button").forEach(x => x.classList.toggle("on", x === b)); quick(); up(); });
+  $("#sQ").oninput = up; quick(); up();
 }
 function confirmTrade(o, c, label) {
   const e = c.effects;
@@ -430,7 +446,7 @@ function renderRun() {
         <div class="form"><label>Starting cash</label><input id="nc" type="number" value="25000" step="1000"></div>
         <div class="row-btns" style="justify-content:flex-start"><button class="btn" id="nr">Start a new run</button></div></div>
       <div class="card"><h3>Theme</h3><span class="seg">${["light", "dark", "system"].map(t => `<button data-th="${t}" class="${theme === t ? "on" : ""}">${t[0].toUpperCase() + t.slice(1)}</button>`).join("")}</span>
-        <p class="hint" style="margin-top:12px">Keys: N next day · F to Friday · W next week (press the same key again, or Enter, to confirm) · 1–6 tabs · Esc closes panels and boxes.</p></div>
+        <p class="hint" style="margin-top:12px">Keys: N next day · F to Friday · W next week (press the same key again, or Enter, to confirm) · S shares · 1–6 tabs · Esc closes panels and boxes.</p></div>
       ${st.ended ? "" : `<div class="card"><h3>End this run</h3><p class="hint">Ending is permanent. It reveals the seed and which real TQQQ years the market came from. Type END to confirm.</p>
         <div class="form"><label>Confirm</label><input id="endc" placeholder="END"></div><div class="row-btns" style="justify-content:flex-start"><button class="btn danger" id="endb" disabled>End run</button></div></div>`}
     </div>
@@ -500,6 +516,7 @@ document.addEventListener("keydown", e => {
   if (k === "n") requestAdvance("day");
   else if (k === "f") requestAdvance("friday");
   else if (k === "w") requestAdvance("week");
+  else if (k === "s") sharesTicket();
   else if (/^[1-6]$/.test(e.key)) { ui.tab = TABS[+e.key - 1]; render(); }
 });
 

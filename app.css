@@ -64,7 +64,7 @@ tr.row:hover td{background:var(--accent3)}
 .seg button.on{background:var(--accent2);color:var(--text);font-weight:600}
 /* chain */
 .chain td{text-align:center;padding:6px 8px}
-.chain td.q{cursor:pointer;border-radius:6px}
+.chain td.q{cursor:pointer;font-weight:600;box-shadow:inset 0 0 0 1px var(--line)}
 .chain td.q:hover{background:var(--accent2)}
 .chain td.k{font-weight:600;background:var(--panel2)}
 .chain td.itm{background:var(--itm)}
